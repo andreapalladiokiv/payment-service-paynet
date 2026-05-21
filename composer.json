@@ -1,0 +1,54 @@
+{
+    "name": "techork/payment-service-paynet",
+    "description": "Paynet hosted-page gateway implementation for payment services",
+    "type": "library",
+    "license": "proprietary",
+    "repositories": [
+        {
+            "type": "vcs",
+            "url": "git@github.com:andreapalladiokiv/payment-service-common.git"
+        },
+        {
+            "type": "vcs",
+            "url": "git@github.com:andreapalladiokiv/payment-service-gateway.git"
+        }
+    ],
+    "require": {
+        "php": "^8.4",
+        "guzzlehttp/guzzle": "^7.0",
+        "moneyphp/money": "^4.0",
+        "omnipay/common": "^3.5",
+        "symfony/intl": "^6.0 || ^7.0 || ^8.0",
+        "techork/payment-service-common": "@dev",
+        "techork/payment-service-gateway": "@dev"
+    },
+    "require-dev": {
+        "mockery/mockery": "^1.6",
+        "pestphp/pest": "^3.0 || ^4.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Techork\\PaymentService\\Paynet\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Techork\\PaymentService\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "gateway": "Techork\\PaymentService\\Paynet\\PaynetGateway",
+            "webhook": "Techork\\PaymentService\\Paynet\\Webhook\\PaynetWebhookSubscriber"
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true,
+            "php-http/discovery": true
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
