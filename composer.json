@@ -18,11 +18,13 @@
         "guzzlehttp/guzzle": "^7.0",
         "moneyphp/money": "^4.0",
         "omnipay/common": "^3.5",
+        "psr/http-message": "^1.1 || ^2.0",
         "symfony/intl": "^6.0 || ^7.0 || ^8.0",
         "techork/payment-service-common": "@dev",
         "techork/payment-service-gateway": "@dev"
     },
     "require-dev": {
+        "guzzlehttp/psr7": "^2.0",
         "mockery/mockery": "^1.6",
         "pestphp/pest": "^3.0 || ^4.0"
     },
