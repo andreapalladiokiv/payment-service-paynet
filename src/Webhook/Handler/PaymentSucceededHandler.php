@@ -8,6 +8,7 @@ use ArrayObject;
 use Money\Currencies\ISOCurrencies;
 use Money\Currency;
 use Money\Money;
+use RuntimeException;
 use Techork\PaymentService\Gateway\ValueObject\GatewayId;
 use Techork\PaymentService\Gateway\Webhook\Contract\HandlerOutcome;
 use Techork\PaymentService\Gateway\Webhook\Contract\TransactionIdResolver;
@@ -52,12 +53,13 @@ final readonly class PaymentSucceededHandler implements WebhookEventHandler
         };
     }
 
+    /**
+     * Paynet reports the currency as an ISO 4217 numeric code. An absent or
+     * unrecognised code is a malformed callback: defaulting it to USD would
+     * book the payment in a currency Paynet never named.
+     */
     private function resolveCurrencyCode(int $numeric): string
     {
-        if ($numeric === 0) {
-            return 'USD';
-        }
-
         $currencies = new ISOCurrencies;
         foreach ($currencies as $currency) {
             if ($currencies->numericCodeFor($currency) === $numeric) {
@@ -65,6 +67,8 @@ final readonly class PaymentSucceededHandler implements WebhookEventHandler
             }
         }
 
-        return 'USD';
+        throw new RuntimeException(
+            sprintf('Paynet reported ISO numeric currency %d, which matches no ISO currency.', $numeric),
+        );
     }
 }
