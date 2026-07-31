@@ -19,6 +19,7 @@ use Techork\PaymentService\Common\ValueObject\CreditCard\Holder;
 use Techork\PaymentService\Common\ValueObject\CreditCard\Number;
 use Techork\PaymentService\Common\ValueObject\HostedPayment;
 use Techork\PaymentService\Gateway\Contract\GatewayCredential;
+use Techork\PaymentService\Gateway\Exception\UnsupportedInstrument;
 use Techork\PaymentService\Paynet\InvoiceIdGenerator;
 use Techork\PaymentService\Paynet\PaynetGateway;
 use Techork\PaymentService\Paynet\PurchaseRequest;
@@ -160,14 +161,14 @@ it('throws when instrument is CreditCard (not hosted)', function () {
     $request = makePaynetPurchaseRequest($client, ['instrument' => $card]);
 
     $request->getData();
-})->throws(RuntimeException::class, 'Paynet only supports the hosted-payment flow');
+})->throws(UnsupportedInstrument::class, 'accepts only a "hosted" instrument on the "purchase" operation, got "card"');
 
 it('throws when instrument is Cash', function () {
     $client = makeMockClient([]);
     $request = makePaynetPurchaseRequest($client, ['instrument' => new Cash]);
 
     $request->getData();
-})->throws(RuntimeException::class, 'Paynet does not support cash');
+})->throws(UnsupportedInstrument::class, 'accepts only a "hosted" instrument on the "purchase" operation, got "cash"');
 
 it('builds Send payload with Invoice from clientUniqueId', function () {
     $captured = null;

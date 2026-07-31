@@ -11,11 +11,21 @@ webhook.
 | Operation | Behavior |
 | --- | --- |
 | `purchase` | `PurchaseRequest` → `POST /api/Payments/Send`, returns a `RedirectChallenge` |
+| `authorize` | throws `UnsupportedOperation` — Paynet has no auth-only step |
 | `createPaymentMethod`, `void`, `issueVirtualCard`, `terminateVirtualCard` | throw `UnsupportedPaynetOperation` |
 
 `PurchaseRequest` is a `PaymentInstrumentVisitor`; only `visitHostedPayment()`
 builds a payload. `CreditCard`, `Cash`, `Token` and `PaymentMethod` instruments
-throw `RuntimeException` — Paynet accepts no raw card data or stored methods.
+throw `UnsupportedInstrument` — Paynet accepts no raw card data or stored
+methods.
+
+`authorize` is declared rather than left to Omnipay's `AbstractGateway` (which
+has neither the method nor `__call`) because `PaymentGatewayRouter::authorize()`
+calls it unconditionally: without a declaration the call is a
+`Call to undefined method` Error that the router would report as a decline. It
+carries the `UnsupportedByGateway` marker, so the router rethrows it. The four
+older refusals deliberately do **not** carry the marker — see the Gateway
+package README.
 
 ## Purchase flow
 

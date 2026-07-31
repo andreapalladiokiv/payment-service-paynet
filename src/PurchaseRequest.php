@@ -25,6 +25,7 @@ use Techork\PaymentService\Common\ValueObject\HostedPayment;
 use Techork\PaymentService\Common\ValueObject\PaymentMethod;
 use Techork\PaymentService\Common\ValueObject\Token;
 use Techork\PaymentService\Gateway\Contract\GatewayCredential;
+use Techork\PaymentService\Gateway\Exception\UnsupportedInstrument;
 
 /**
  * POST /api/Payments/Send — creates a Paynet payment and receives a PaymentId
@@ -127,22 +128,22 @@ final class PurchaseRequest extends AbstractRequest implements PaymentInstrument
 
     public function visitCreditCard(CreditCard $card): never
     {
-        throw new RuntimeException('Paynet only supports the hosted-payment flow; raw card data is not accepted.');
+        throw UnsupportedInstrument::onlyAccepts('paynet', 'purchase', HostedPayment::type(), $card);
     }
 
     public function visitCash(Cash $cash): never
     {
-        throw new RuntimeException('Paynet does not support cash payments.');
+        throw UnsupportedInstrument::onlyAccepts('paynet', 'purchase', HostedPayment::type(), $cash);
     }
 
     public function visitToken(Token $token): never
     {
-        throw new RuntimeException('Paynet does not support token-based payments.');
+        throw UnsupportedInstrument::onlyAccepts('paynet', 'purchase', HostedPayment::type(), $token);
     }
 
     public function visitPaymentMethod(PaymentMethod $paymentMethod): never
     {
-        throw new RuntimeException('Paynet does not support stored payment methods.');
+        throw UnsupportedInstrument::onlyAccepts('paynet', 'purchase', HostedPayment::type(), $paymentMethod);
     }
 
     public function visitHostedPayment(HostedPayment $hosted): array
