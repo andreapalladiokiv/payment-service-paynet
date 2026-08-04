@@ -12,7 +12,8 @@ webhook.
 | --- | --- |
 | `purchase` | `PurchaseRequest` → `POST /api/Payments/Send`, returns a `RedirectChallenge` |
 | `authorize` | throws `UnsupportedOperation` — Paynet has no auth-only step |
-| `createPaymentMethod`, `void`, `issueVirtualCard`, `terminateVirtualCard` | throw `UnsupportedPaynetOperation` |
+| `createPaymentMethod`, `issueVirtualCard`, `terminateVirtualCard` | throw `UnsupportedOperation` — marked, so the router rethrows |
+| `void` | throws `UnsupportedPaynetOperation` — unmarked, so the router folds it into a failed result |
 
 `PurchaseRequest` is a `PaymentInstrumentVisitor`; only `visitHostedPayment()`
 builds a payload. `CreditCard`, `Cash`, `Token` and `PaymentMethod` instruments
@@ -23,8 +24,10 @@ methods.
 has neither the method nor `__call`) because `PaymentGatewayRouter::authorize()`
 calls it unconditionally: without a declaration the call is a
 `Call to undefined method` Error that the router would report as a decline. It
-carries the `UnsupportedByGateway` marker, so the router rethrows it. The four
-older refusals deliberately do **not** carry the marker — see the Gateway
+carries the `UnsupportedByGateway` marker, so the router rethrows it, and so do
+`createPaymentMethod`, `issueVirtualCard` and `terminateVirtualCard`. Only
+`void` deliberately does **not** carry the marker — it backs `cancel()` and is
+the only thing that can close an abandoned hosted payment — see the Gateway
 package README.
 
 ## Purchase flow
@@ -99,7 +102,8 @@ registers kind `Paynet` with the Gateway webhook registries:
   `Payment.ID` via `TransactionIdResolver` (unknown reference →
   `HandlerOutcome::Delay`, i.e. retry later), then records the success through
   `GatewaySuccessRecorder` with `Payment.Amount` and the ISO-numeric
-  `Payment.Currency` (unknown/missing numeric code falls back to `USD`).
+  `Payment.Currency` (an unknown or missing numeric code raises a
+  `RuntimeException` — the callback is treated as malformed).
 
 ## Testing
 
