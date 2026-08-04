@@ -93,23 +93,60 @@ final class PaynetGateway extends AbstractGateway implements Gateway
         );
     }
 
+    /**
+     * Marked, like {@see authorize}: Paynet is hosted-only, so the buyer's card
+     * never passes through us and there is nothing here to tokenize. A caller
+     * asking Paynet to store an instrument has picked the wrong gateway, and no
+     * retry or alternative instrument changes that.
+     */
     public function createPaymentMethod(array $options = []): AbstractRequest
     {
-        throw new UnsupportedPaynetOperation('createPaymentMethod');
+        throw UnsupportedOperation::forGateway(
+            'paynet',
+            'createPaymentMethod',
+            'Paynet is a hosted-page gateway; the card is entered on its page and never reaches us, so there is nothing to tokenize.',
+        );
     }
 
+    /**
+     * The one refusal here left deliberately UNMARKED, and the reason is a
+     * legitimate caller rather than history.
+     *
+     * {@see \Techork\PaymentService\Gateway\PaymentGatewayRouter::cancel} routes
+     * to `void()`, and cancelling is exactly what an abandoned hosted payment
+     * needs: it sits in `RequiresAction` while the buyer is on paynet.md, and
+     * {@see \Techork\PaymentService\Domain\PaymentIntent\PaymentIntentAggregate::cancel}
+     * accepts that status. Today the refusal folds into a failed `GatewayResult`,
+     * `OmnipayCancelPort` turns that into `GatewayDeclinedException`, and the
+     * aggregate records a terminal event — the intent gets closed out. Marking
+     * this would make the exception propagate instead and leave every abandoned
+     * Paynet payment stuck in `RequiresAction` with no way to close it. A worse
+     * outcome than the imprecise event it currently records.
+     */
     public function void(array $options = []): AbstractRequest
     {
         throw new UnsupportedPaynetOperation('void');
     }
 
+    /**
+     * Marked: card issuing is a different product, not a primitive Paynet is
+     * missing. Reaching either of these is a routing mistake.
+     */
     public function issueVirtualCard(array $options = []): AbstractRequest
     {
-        throw new UnsupportedPaynetOperation('issueVirtualCard');
+        throw UnsupportedOperation::forGateway(
+            'paynet',
+            'issueVirtualCard',
+            'Paynet acquires hosted payments only and issues no cards; route card issuing to an issuing gateway.',
+        );
     }
 
     public function terminateVirtualCard(array $options = []): AbstractRequest
     {
-        throw new UnsupportedPaynetOperation('terminateVirtualCard');
+        throw UnsupportedOperation::forGateway(
+            'paynet',
+            'terminateVirtualCard',
+            'Paynet acquires hosted payments only and issues no cards; route card issuing to an issuing gateway.',
+        );
     }
 }
