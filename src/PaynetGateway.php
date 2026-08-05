@@ -6,6 +6,7 @@ namespace Techork\PaymentService\Paynet;
 
 use Omnipay\Common\AbstractGateway;
 use Omnipay\Common\Message\AbstractRequest;
+use Override;
 use Techork\PaymentService\Gateway\Contract\CustomerRepository;
 use Techork\PaymentService\Gateway\Contract\Gateway;
 use Techork\PaymentService\Gateway\Exception\UnsupportedOperation;
@@ -30,11 +31,13 @@ final class PaynetGateway extends AbstractGateway implements Gateway
 
     public const string PRODUCTION_REDIRECT_URL = 'https://paynet.md/acquiring/getecom';
 
+    #[Override]
     public function getName(): string
     {
         return 'paynet';
     }
 
+    #[Override]
     public function getDefaultParameters(): array
     {
         return [
@@ -42,6 +45,7 @@ final class PaynetGateway extends AbstractGateway implements Gateway
         ];
     }
 
+    #[Override]
     public function setCustomerRepository(CustomerRepository $repository): void
     {
         // Paynet has no customer concept.
@@ -64,9 +68,9 @@ final class PaynetGateway extends AbstractGateway implements Gateway
             : self::SANDBOX_BASE_URL;
     }
 
-    public function purchase(array $parameters = []): AbstractRequest
+    public function purchase(array $options = []): AbstractRequest
     {
-        return $this->createRequest(PurchaseRequest::class, $parameters);
+        return $this->createRequest(PurchaseRequest::class, $options);
     }
 
     /**
@@ -99,6 +103,7 @@ final class PaynetGateway extends AbstractGateway implements Gateway
      * asking Paynet to store an instrument has picked the wrong gateway, and no
      * retry or alternative instrument changes that.
      */
+    #[Override]
     public function createPaymentMethod(array $options = []): AbstractRequest
     {
         throw UnsupportedOperation::forGateway(
@@ -123,6 +128,7 @@ final class PaynetGateway extends AbstractGateway implements Gateway
      * Paynet payment stuck in `RequiresAction` with no way to close it. A worse
      * outcome than the imprecise event it currently records.
      */
+    #[Override]
     public function void(array $options = []): AbstractRequest
     {
         throw new UnsupportedPaynetOperation('void');
@@ -132,6 +138,7 @@ final class PaynetGateway extends AbstractGateway implements Gateway
      * Marked: card issuing is a different product, not a primitive Paynet is
      * missing. Reaching either of these is a routing mistake.
      */
+    #[Override]
     public function issueVirtualCard(array $options = []): AbstractRequest
     {
         throw UnsupportedOperation::forGateway(
@@ -141,12 +148,33 @@ final class PaynetGateway extends AbstractGateway implements Gateway
         );
     }
 
+    #[Override]
     public function terminateVirtualCard(array $options = []): AbstractRequest
     {
         throw UnsupportedOperation::forGateway(
             'paynet',
             'terminateVirtualCard',
             'Paynet acquires hosted payments only and issues no cards; route card issuing to an issuing gateway.',
+        );
+    }
+
+    #[Override]
+    public function updateVirtualCard(array $options = []): AbstractRequest
+    {
+        throw UnsupportedOperation::forGateway(
+            'paynet',
+            'updateVirtualCard',
+            'Paynet acquires hosted payments only and issues no cards; route card issuing to an issuing gateway.',
+        );
+    }
+
+    #[Override]
+    public function retryRefund(array $options = []): AbstractRequest
+    {
+        throw UnsupportedOperation::forGateway(
+            'paynet',
+            'retryRefund',
+            'Paynet acquires hosted payments only and refunds nothing, so there is no refund to redirect onto another card.',
         );
     }
 }
