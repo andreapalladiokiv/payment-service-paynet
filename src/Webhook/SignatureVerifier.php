@@ -37,7 +37,7 @@ final readonly class SignatureVerifier implements SignatureVerifierContract
             return false;
         }
 
-        $payload = json_decode($request->getBody()->getContents(), true);
+        $payload = json_decode((string) $request->getBody(), true);
         if (! is_array($payload)) {
             return false;
         }

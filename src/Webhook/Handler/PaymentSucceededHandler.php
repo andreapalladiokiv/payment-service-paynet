@@ -56,15 +56,21 @@ final readonly class PaymentSucceededHandler implements WebhookEventHandler
     }
 
     /**
-     * Paynet reports the currency as an ISO 4217 numeric code. An absent or
-     * unrecognised code is a malformed callback: defaulting it to USD would
-     * book the payment in a currency Paynet never named.
-     */
-    /**
+     * Paynet reports the currency as an ISO 4217 numeric code. An absent or unrecognised code
+     * is a malformed callback: defaulting it to USD would book the payment in a currency
+     * Paynet never named.
+     *
      * @return non-empty-string
      */
     private function resolveCurrencyCode(int $numeric): string
     {
+        // 999 is ISO 4217's own "no currency" placeholder, and moneyphp lists it as XXX — so
+        // the loop below would resolve it and the payment would be booked in a currency that
+        // exists only to mean there isn't one. It belongs with the refusal, not the matches.
+        if ($numeric === 999) {
+            throw new RuntimeException('Paynet reported ISO numeric currency 999, which is the "no currency" placeholder rather than a currency.');
+        }
+
         $currencies = new ISOCurrencies;
         foreach ($currencies as $currency) {
             if ($currencies->numericCodeFor($currency) === $numeric) {
@@ -72,8 +78,6 @@ final readonly class PaymentSucceededHandler implements WebhookEventHandler
             }
         }
 
-        throw new RuntimeException(
-            sprintf('Paynet reported ISO numeric currency %d, which matches no ISO currency.', $numeric),
-        );
+        throw new RuntimeException("Paynet reported ISO numeric currency $numeric, which matches no ISO currency.");
     }
 }
