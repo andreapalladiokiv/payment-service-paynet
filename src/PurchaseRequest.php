@@ -12,6 +12,7 @@ use GuzzleHttp\Exception\GuzzleException;
 use Money\Currencies\ISOCurrencies;
 use Money\Money;
 use Omnipay\Common\Message\AbstractRequest;
+use Override;
 use RuntimeException;
 use Symfony\Component\Intl\Countries;
 use Techork\PaymentService\Common\Contract\DecryptInterface;
@@ -36,11 +37,14 @@ use Techork\PaymentService\Gateway\Exception\UnsupportedInstrument;
  * POST the supplied form fields to Paynet's portal (Acquiring/GetEcom) to
  * reach the hosted UI where the cardholder completes payment. Outcome is
  * delivered asynchronously via webhook.
+ *
+ * @implements PaymentInstrumentVisitor<array>
  */
 final class PurchaseRequest extends AbstractRequest implements PaymentInstrumentVisitor
 {
     private const string EXPIRY_INTERVAL = 'PT4H';
 
+    #[Override]
     public function setMoney(Money $value): self
     {
         return $this->setParameter('money', $value);
@@ -116,6 +120,7 @@ final class PurchaseRequest extends AbstractRequest implements PaymentInstrument
         return $this->getParameter('guzzle') ?? new Client;
     }
 
+    #[Override]
     public function getData(): array
     {
         $this->validate('money', 'instrument', 'gateway', 'decrypter');
@@ -126,31 +131,37 @@ final class PurchaseRequest extends AbstractRequest implements PaymentInstrument
         return $instrument->accept($this);
     }
 
+    #[Override]
     public function visitCreditCard(CreditCard $card): never
     {
         throw UnsupportedInstrument::onlyAccepts('paynet', 'purchase', HostedPayment::type(), $card);
     }
 
+    #[Override]
     public function visitCash(Cash $cash): never
     {
         throw UnsupportedInstrument::onlyAccepts('paynet', 'purchase', HostedPayment::type(), $cash);
     }
 
+    #[Override]
     public function visitToken(Token $token): never
     {
         throw UnsupportedInstrument::onlyAccepts('paynet', 'purchase', HostedPayment::type(), $token);
     }
 
+    #[Override]
     public function visitPaymentMethod(PaymentMethod $paymentMethod): never
     {
         throw UnsupportedInstrument::onlyAccepts('paynet', 'purchase', HostedPayment::type(), $paymentMethod);
     }
 
+    #[Override]
     public function visitHostedPayment(HostedPayment $hosted): array
     {
         /** @var Money $money */
         $money = $this->getParameter('money');
-        $gateway = $this->getGateway();
+        $gateway = $this->getGateway()
+            ?? throw new RuntimeException('A Paynet hosted payment was built without a gateway, so its credentials cannot be read.');
         $credentials = $this->decryptCredentials($gateway);
 
         $externalId = $this->resolveExternalId();
@@ -203,6 +214,7 @@ final class PurchaseRequest extends AbstractRequest implements PaymentInstrument
         return ($this->getParameter('environment') ?? 'sandbox') === 'production';
     }
 
+    #[Override]
     public function sendData($data): PurchaseResponse
     {
         try {
@@ -319,7 +331,10 @@ final class PurchaseRequest extends AbstractRequest implements PaymentInstrument
     }
 
     /**
-     * @param  array<string, string>  $credentials
+     * @param string $url
+     * @param array<string, string> $credentials
+     * @return string
+     * @throws GuzzleException
      */
     private function authenticate(string $url, array $credentials): string
     {
@@ -350,12 +365,6 @@ final class PurchaseRequest extends AbstractRequest implements PaymentInstrument
      */
     private function decryptCredentials(GatewayCredential $gateway): array
     {
-        $decrypter = $this->getDecrypter();
-        $decrypted = [];
-        foreach ($gateway->getCredentials() as $key => $value) {
-            $decrypted[$key] = $decrypter->decrypt($value);
-        }
-
-        return $decrypted;
+        return array_map($this->getDecrypter()->decrypt(...), $gateway->getCredentials());
     }
 }

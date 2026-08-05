@@ -8,6 +8,7 @@ use ArrayObject;
 use Money\Currencies\ISOCurrencies;
 use Money\Currency;
 use Money\Money;
+use Override;
 use RuntimeException;
 use Techork\PaymentService\Gateway\ValueObject\GatewayId;
 use Techork\PaymentService\Gateway\Webhook\Contract\HandlerOutcome;
@@ -26,6 +27,7 @@ final readonly class PaymentSucceededHandler implements WebhookEventHandler
         private GatewaySuccessRecorder $recorder,
     ) {}
 
+    #[Override]
     public function __invoke(object $event, GatewayId $gatewayId): HandlerOutcome
     {
         /** @var ArrayObject $event */
@@ -57,6 +59,9 @@ final readonly class PaymentSucceededHandler implements WebhookEventHandler
      * Paynet reports the currency as an ISO 4217 numeric code. An absent or
      * unrecognised code is a malformed callback: defaulting it to USD would
      * book the payment in a currency Paynet never named.
+     */
+    /**
+     * @return non-empty-string
      */
     private function resolveCurrencyCode(int $numeric): string
     {

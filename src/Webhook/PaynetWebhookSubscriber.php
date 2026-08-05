@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Techork\PaymentService\Paynet\Webhook;
 
+use Override;
 use Techork\PaymentService\Paynet\Webhook\Handler\PaymentSucceededHandler;
 use Techork\PaymentService\Gateway\Webhook\Contract\WebhookSubscriber;
 use Techork\PaymentService\Gateway\Webhook\HandlerRegistry;
@@ -19,6 +20,7 @@ final readonly class PaynetWebhookSubscriber implements WebhookSubscriber
         private PaymentSucceededHandler $paymentSucceeded,
     ) {}
 
+    #[Override]
     public function subscribe(VerifierRegistry $verifiers, HandlerRegistry $handlers): void
     {
         $verifiers->register(self::KIND, $this->verifier, $this->parser);

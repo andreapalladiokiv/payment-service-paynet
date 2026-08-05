@@ -67,7 +67,7 @@ function makePaynetDecrypter(): DecryptInterface
 function makePaynetGateway(): PaynetGateway
 {
     $gw = new PaynetGateway;
-    $gw->initialize([]);
+    $gw->initialize();
 
     return $gw;
 }

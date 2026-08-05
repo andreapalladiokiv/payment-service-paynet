@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Techork\PaymentService\Paynet\Webhook;
 
 use ArrayObject;
+use Override;
 use Techork\PaymentService\Gateway\Webhook\Contract\EventParser as EventParserContract;
 use Techork\PaymentService\Gateway\Webhook\Contract\ParsedEvent;
 
@@ -22,6 +23,7 @@ final readonly class EventParser implements EventParserContract
     /**
      * @return ParsedEvent<ArrayObject>
      */
+    #[Override]
     public function parse(array $payload): ParsedEvent
     {
         $eventType = (string) ($payload['EventType'] ?? '');
