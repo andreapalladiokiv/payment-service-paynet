@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Techork\PaymentService\Paynet\Webhook;
 
 use Override;
-use Psr\Http\Message\ServerRequestInterface;
 use Techork\PaymentService\Gateway\Contract\GatewayCredential;
+use Techork\PaymentService\Gateway\Webhook\Contract\InboundWebhook;
 use Techork\PaymentService\Gateway\Webhook\Contract\SignatureVerifier as SignatureVerifierContract;
 
 /**
@@ -24,9 +24,9 @@ final readonly class SignatureVerifier implements SignatureVerifierContract
     private const string SIGNATURE_HEADER = 'Signature';
 
     #[Override]
-    public function verify(ServerRequestInterface $request, GatewayCredential $gateway): bool
+    public function verify(InboundWebhook $webhook, GatewayCredential $gateway): bool
     {
-        $provided = $request->getHeaderLine(self::SIGNATURE_HEADER);
+        $provided = $webhook->header(self::SIGNATURE_HEADER);
         if ($provided === '') {
             return false;
         }
@@ -37,7 +37,7 @@ final readonly class SignatureVerifier implements SignatureVerifierContract
             return false;
         }
 
-        $payload = json_decode((string) $request->getBody(), true);
+        $payload = json_decode($webhook->body, true);
         if (! is_array($payload)) {
             return false;
         }

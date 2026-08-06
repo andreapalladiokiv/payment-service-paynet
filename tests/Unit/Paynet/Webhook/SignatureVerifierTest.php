@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Techork\PaymentService\Gateway\Webhook\Contract\InboundWebhook;
+
 use GuzzleHttp\Psr7\ServerRequest;
 use Techork\PaymentService\Gateway\Contract\GatewayCredential;
 use Techork\PaymentService\Gateway\ValueObject\GatewayId;
@@ -91,14 +93,14 @@ function paynetWebhookSign(array $payload, string $secret): string
  * `Signature` header. `$body` is accepted raw so malformed-JSON cases can be
  * expressed too.
  */
-function paynetWebhookRequest(string $body, ?string $signature): ServerRequest
+function paynetWebhookRequest(string $body, ?string $signature): InboundWebhook
 {
     $headers = $signature === null ? [] : ['Signature' => $signature];
 
-    return new ServerRequest('POST', 'https://merchant.example/webhooks', $headers, $body);
+    return InboundWebhook::from(new ServerRequest('POST', 'https://merchant.example/webhooks', $headers, $body));
 }
 
-function paynetWebhookSignedRequest(array $payload, string $secret): ServerRequest
+function paynetWebhookSignedRequest(array $payload, string $secret): InboundWebhook
 {
     return paynetWebhookRequest((string) json_encode($payload), paynetWebhookSign($payload, $secret));
 }
