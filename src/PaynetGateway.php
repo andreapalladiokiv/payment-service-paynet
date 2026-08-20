@@ -7,7 +7,6 @@ namespace Techork\PaymentService\Paynet;
 use Omnipay\Common\AbstractGateway;
 use Omnipay\Common\Message\AbstractRequest;
 use Override;
-use Techork\PaymentService\Gateway\Contract\CustomerRepository;
 use Techork\PaymentService\Gateway\Contract\Gateway;
 use Techork\PaymentService\Gateway\Exception\UnsupportedOperation;
 
@@ -45,11 +44,6 @@ final class PaynetGateway extends AbstractGateway implements Gateway
         ];
     }
 
-    #[Override]
-    public function setCustomerRepository(CustomerRepository $repository): void
-    {
-        // Paynet has no customer concept.
-    }
 
     public function getEnvironment(): string
     {
