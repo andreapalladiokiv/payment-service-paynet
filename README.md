@@ -10,25 +10,24 @@ webhook.
 
 | Operation | Behavior |
 | --- | --- |
-| `purchase` | `PurchaseRequest` → `POST /api/Payments/Send`, returns a `RedirectChallenge` |
+| `charge` | `Purchase` → `POST /api/Payments/Send`, returns a `RedirectChallenge` |
 | `authorize` | throws `UnsupportedOperation` — Paynet has no auth-only step |
-| `createPaymentMethod`, `issueVirtualCard`, `terminateVirtualCard` | throw `UnsupportedOperation` — marked, so the router rethrows |
-| `void` | throws `UnsupportedPaynetOperation` — unmarked, so the router folds it into a failed result |
+| `registerPaymentMethod`, `issueVirtualCard`, `terminateVirtualCard` | throw `UnsupportedOperation` — marked, so the boundary rethrows |
+| `cancel` | throws `UnsupportedPaynetOperation` — unmarked, so the boundary folds it into a failed result |
 
-`PurchaseRequest` is a `PaymentInstrumentVisitor`; only `visitHostedPayment()`
+`Purchase` is a `PaymentInstrumentVisitor`; only `visitHostedPayment()`
 builds a payload. `CreditCard`, `Cash`, `Token` and `PaymentMethod` instruments
 throw `UnsupportedInstrument` — Paynet accepts no raw card data or stored
 methods.
 
-`authorize` is declared rather than left to Omnipay's `AbstractGateway` (which
-has neither the method nor `__call`) because `PaymentGatewayRouter::authorize()`
-calls it unconditionally: without a declaration the call is a
-`Call to undefined method` Error that the router would report as a decline. It
-carries the `UnsupportedByGateway` marker, so the router rethrows it, and so do
-`createPaymentMethod`, `issueVirtualCard` and `terminateVirtualCard`. Only
-`void` deliberately does **not** carry the marker — it backs `cancel()` and is
-the only thing that can close an abandoned hosted payment — see the Gateway
-package README.
+Every verb is declared, because `Contract\Gateway` declares them all: a gateway
+that supports none of a role's operations still says so in code rather than by
+having no method. `authorize` carries the `UnsupportedByGateway` marker, so the
+failure boundary rethrows it, and so do `registerPaymentMethod`,
+`issueVirtualCard` and `terminateVirtualCard`. Only `cancel` deliberately does
+**not** carry the marker — it is the only thing that can close an abandoned
+hosted payment, so it has to degrade into a failed result mid-saga — see the
+Gateway package README.
 
 ## Purchase flow
 
@@ -81,7 +80,7 @@ stored, without a decrypter).
 ## Invoice ids
 
 Paynet's `Invoice` / `ExternalID` must be unique per partner and fit a `long`
-(Paynet API v0.5). `PurchaseRequest` uses the `clientUniqueId` parameter when
+(Paynet API v0.5). `Purchase` uses the command's `clientUniqueId` when
 set, otherwise falls back to an injected `InvoiceIdGenerator::next()`;
 providing neither throws. Generators must be concurrency-safe but need not be
 strictly monotonic (Paynet's own SDK example uses a millisecond timestamp).
@@ -107,5 +106,5 @@ registers kind `Paynet` with the Gateway webhook registries:
 
 ## Testing
 
-Pest unit tests stub HTTP with Guzzle's `MockHandler` via
-`PurchaseRequest::setHttpClient()`; no real Paynet credentials are needed.
+Pest unit tests stub HTTP with Guzzle's `MockHandler`, passed to `Purchase` as
+a constructor argument; no real Paynet credentials are needed.

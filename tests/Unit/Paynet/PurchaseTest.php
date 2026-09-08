@@ -22,9 +22,14 @@ use Techork\PaymentService\Gateway\Contract\GatewayCredential;
 use Techork\PaymentService\Gateway\Exception\UnsupportedInstrument;
 use Techork\PaymentService\Paynet\InvoiceIdGenerator;
 use Techork\PaymentService\Paynet\PaynetGateway;
-use Techork\PaymentService\Paynet\PurchaseRequest;
-use Techork\PaymentService\Paynet\PurchaseResponse;
+use Techork\PaymentService\Paynet\Purchase;
 use Techork\PaymentService\Gateway\ValueObject\GatewayId;
+use Techork\PaymentService\Common\Contract\PaymentInstrument;
+use Techork\PaymentService\Common\ValueObject\PaymentInitiation;
+use Techork\PaymentService\Gateway\Command\PlacementCommand;
+use Techork\PaymentService\Gateway\Contract\GatewayInstrumentRepository;
+use Techork\PaymentService\Gateway\ValueObject\GatewayInfrastructure;
+use Techork\PaymentService\Gateway\Contract\CustomerRepository;
 
 function makePaynetCredential(): GatewayCredential
 {
@@ -66,16 +71,12 @@ function makePaynetDecrypter(): DecryptInterface
 
 function makePaynetGateway(): PaynetGateway
 {
-    $gw = new PaynetGateway;
-    $gw->initialize();
-
-    return $gw;
+    return new PaynetGateway;
 }
 
-function makePaynetPurchaseRequest(Client $httpClient, array $override = []): PurchaseRequest
+function makePaynetPurchase(Client $httpClient, array $override = [], ?InvoiceIdGenerator $invoiceIds = null): Purchase
 {
-    /** @var PurchaseRequest $request */
-    $request = makePaynetGateway()->purchase(array_merge([
+    $request = paynetPurchase(array_merge([
         'money' => new Money(1500, new Currency('USD')),
         'gateway' => makePaynetCredential(),
         'decrypter' => makePaynetDecrypter(),
@@ -84,8 +85,7 @@ function makePaynetPurchaseRequest(Client $httpClient, array $override = []): Pu
             successUrl: 'https://merchant.example/return',
             cancelUrl: 'https://merchant.example/return',
         ),
-    ], $override));
-    $request->setHttpClient($httpClient);
+    ], $override), $httpClient, $invoiceIds);
 
     return $request;
 }
@@ -98,21 +98,52 @@ function makeMockClient(array $responses): Client
     return new Client(['handler' => $handler]);
 }
 
+/**
+ * @param  array<string, mixed>  $options
+ */
+function paynetPurchase(array $options, ?Client $http = null, ?InvoiceIdGenerator $invoiceIds = null): Purchase
+{
+    $command = new PlacementCommand(
+        gatewayId: GatewayId::generate(),
+        instrument: $options['instrument'] ?? Mockery::mock(PaymentInstrument::class),
+        amount: $options['money'] ?? new Money(1000, new Currency('USD')),
+        clientUniqueId: $options['clientUniqueId'] ?? null,
+        billingAddress: $options['billingAddress'] ?? null,
+        threeDS: $options['threeDS'] ?? null,
+        statementDescription: $options['statementDescription'] ?? null,
+        description: $options['description'] ?? null,
+        initiation: $options['initiation'] ?? PaymentInitiation::CardholderInitiated,
+    );
+
+    // Built directly, transport and all: the gateway charges rather than handing back an
+    // operation, and every collaborator it would have supplied is an argument here.
+    return new Purchase(
+        new GatewayInfrastructure(
+            $options['gateway'] ?? Mockery::mock(GatewayCredential::class, ['getId' => GatewayId::generate()]),
+            $options['decrypter'] ?? Mockery::mock(DecryptInterface::class),
+            $options['referenceResolver'] ?? Mockery::mock(GatewayInstrumentRepository::class, ['find' => null]),
+            $options['customerRepository'] ?? Mockery::mock(CustomerRepository::class, ['findByInstrument' => null]),
+        ),
+        $command,
+        $http ?? new Client,
+        $invoiceIds,
+        environment: $options['environment'] ?? 'sandbox',
+    );
+}
+
 it('returns RedirectChallenge with Paynet form fields on successful Send', function () {
     $client = makeMockClient([
         new Response(200, [], json_encode(['access_token' => 'tok', 'token_type' => 'bearer', 'expires_in' => 3600])),
         new Response(200, [], json_encode(['PaymentId' => 'pay-42', 'Signature' => 'sig-abc'])),
     ]);
 
-    $request = makePaynetPurchaseRequest($client);
-    /** @var PurchaseResponse $response */
-    $response = $request->send();
+    $result = makePaynetPurchase($client)->charge();
 
-    expect($response)->toBeInstanceOf(PurchaseResponse::class)
-        ->and($response->getTransactionReference())->toBe('pay-42')
-        ->and($response->getChallenge())->toBeInstanceOf(RedirectChallenge::class);
+    expect($result->isRequiresAction())->toBeTrue()
+        ->and($result->reference)->toBe('pay-42')
+        ->and($result->challenge)->toBeInstanceOf(RedirectChallenge::class);
 
-    $challenge = $response->getChallenge();
+    $challenge = $result->challenge;
     expect($challenge->url)->toBe('https://test.paynet.md/acquiring/getecom')
         ->and($challenge->transactionId)->toBe('pay-42')
         ->and($challenge->formFields['operation'])->toBe('pay-42')
@@ -127,13 +158,12 @@ it('returns failed response with error message on non-2xx from Send', function (
         new Response(400, [], json_encode(['Message' => 'Invalid merchant code'])),
     ]);
 
-    $request = makePaynetPurchaseRequest($client);
-    $response = $request->send();
+    $result = makePaynetPurchase($client)->charge();
 
-    expect($response->isSuccessful())->toBeFalse()
-        ->and($response->getTransactionReference())->toBeNull()
-        ->and($response->getChallenge())->toBeNull()
-        ->and($response->getMessage())->toBe('Invalid merchant code');
+    expect($result->success)->toBeFalse()
+        ->and($result->reference)->toBeNull()
+        ->and($result->challenge)->toBeNull()
+        ->and($result->message)->toBe('Invalid merchant code');
 });
 
 it('returns failed response when Send payload is missing PaymentId', function () {
@@ -142,11 +172,10 @@ it('returns failed response when Send payload is missing PaymentId', function ()
         new Response(200, [], json_encode(['Signature' => 'sig'])),
     ]);
 
-    $request = makePaynetPurchaseRequest($client);
-    $response = $request->send();
+    $result = makePaynetPurchase($client)->charge();
 
-    expect($response->isSuccessful())->toBeFalse()
-        ->and($response->getMessage())->toContain('missing PaymentId');
+    expect($result->success)->toBeFalse()
+        ->and($result->message)->toContain('missing PaymentId');
 });
 
 it('throws when instrument is CreditCard (not hosted)', function () {
@@ -158,16 +187,16 @@ it('throws when instrument is CreditCard (not hosted)', function () {
         new Cvc,
     );
 
-    $request = makePaynetPurchaseRequest($client, ['instrument' => $card]);
+    $request = makePaynetPurchase($client, ['instrument' => $card]);
 
-    $request->getData();
+    $request->payload();
 })->throws(UnsupportedInstrument::class, 'accepts only a "hosted" instrument on the "purchase" operation, got "card"');
 
 it('throws when instrument is Cash', function () {
     $client = makeMockClient([]);
-    $request = makePaynetPurchaseRequest($client, ['instrument' => new Cash]);
+    $request = makePaynetPurchase($client, ['instrument' => new Cash]);
 
-    $request->getData();
+    $request->payload();
 })->throws(UnsupportedInstrument::class, 'accepts only a "hosted" instrument on the "purchase" operation, got "cash"');
 
 it('builds Send payload with Invoice from clientUniqueId', function () {
@@ -181,8 +210,8 @@ it('builds Send payload with Invoice from clientUniqueId', function () {
         },
     ]);
 
-    $request = makePaynetPurchaseRequest($client);
-    $request->send();
+    $request = makePaynetPurchase($client);
+    $request->charge();
 
     expect($captured)->not->toBeNull()
         ->and($captured['Invoice'])->toBe('01929fa5-0000-7000-8000-aaaaaaaaaaaa')
@@ -210,9 +239,7 @@ it('falls back to InvoiceIdGenerator when clientUniqueId is null', function () {
         }
     };
 
-    $request = makePaynetPurchaseRequest($client, ['clientUniqueId' => null]);
-    $request->setInvoiceIdGenerator($generator);
-    $request->send();
+    makePaynetPurchase($client, ['clientUniqueId' => null], $generator)->charge();
 
     expect($captured)->not->toBeNull()
         ->and($captured['Invoice'])->toBe(4242424242);
@@ -220,7 +247,7 @@ it('falls back to InvoiceIdGenerator when clientUniqueId is null', function () {
 
 it('throws when neither clientUniqueId nor InvoiceIdGenerator is provided', function () {
     $client = makeMockClient([]);
-    $request = makePaynetPurchaseRequest($client, ['clientUniqueId' => null]);
+    $request = makePaynetPurchase($client, ['clientUniqueId' => null]);
 
-    $request->getData();
+    $request->payload();
 })->throws(RuntimeException::class, 'requires either a clientUniqueId or an InvoiceIdGenerator');

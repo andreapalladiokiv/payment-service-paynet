@@ -11,7 +11,9 @@ use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 use Money\Currencies\ISOCurrencies;
 use Money\Money;
-use Omnipay\Common\Message\AbstractRequest;
+use Techork\PaymentService\Gateway\Command\PlacementCommand;
+use Techork\PaymentService\Gateway\Contract\AuthorizationResult;
+use Techork\PaymentService\Gateway\ValueObject\GatewayInfrastructure;
 use Override;
 use RuntimeException;
 use Symfony\Component\Intl\Countries;
@@ -40,95 +42,24 @@ use Techork\PaymentService\Gateway\Exception\UnsupportedInstrument;
  *
  * @implements PaymentInstrumentVisitor<array>
  */
-final class PurchaseRequest extends AbstractRequest implements PaymentInstrumentVisitor
+final class Purchase implements PaymentInstrumentVisitor
 {
     private const string EXPIRY_INTERVAL = 'PT4H';
 
-    #[Override]
-    public function setMoney(Money $value): self
+    public function __construct(
+        private readonly GatewayInfrastructure $infrastructure,
+        private readonly PlacementCommand $command,
+        private readonly Client $http = new Client,
+        private readonly ?InvoiceIdGenerator $invoiceIdGenerator = null,
+        private readonly string $environment = 'sandbox',
+    ) {}
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function payload(): array
     {
-        return $this->setParameter('money', $value);
-    }
-
-    public function setInstrument(PaymentInstrument $value): self
-    {
-        return $this->setParameter('instrument', $value);
-    }
-
-    public function getInstrument(): ?PaymentInstrument
-    {
-        return $this->getParameter('instrument');
-    }
-
-    public function setGateway(GatewayCredential $value): self
-    {
-        return $this->setParameter('gateway', $value);
-    }
-
-    public function getGateway(): ?GatewayCredential
-    {
-        return $this->getParameter('gateway');
-    }
-
-    public function setDecrypter(DecryptInterface $value): self
-    {
-        return $this->setParameter('decrypter', $value);
-    }
-
-    public function getDecrypter(): DecryptInterface
-    {
-        return $this->getParameter('decrypter');
-    }
-
-    public function setBillingAddress(?BillingAddress $value): self
-    {
-        return $this->setParameter('billingAddress', $value);
-    }
-
-    public function getBillingAddress(): ?BillingAddress
-    {
-        return $this->getParameter('billingAddress');
-    }
-
-    public function setClientUniqueId(int|string|null $value): self
-    {
-        return $this->setParameter('clientUniqueId', $value);
-    }
-
-    public function getClientUniqueId(): int|string|null
-    {
-        return $this->getParameter('clientUniqueId');
-    }
-
-    public function setInvoiceIdGenerator(?InvoiceIdGenerator $value): self
-    {
-        return $this->setParameter('invoiceIdGenerator', $value);
-    }
-
-    public function getInvoiceIdGenerator(): ?InvoiceIdGenerator
-    {
-        return $this->getParameter('invoiceIdGenerator');
-    }
-
-    public function setHttpClient(Client $value): self
-    {
-        return $this->setParameter('guzzle', $value);
-    }
-
-    public function getGuzzle(): Client
-    {
-        return $this->getParameter('guzzle') ?? new Client;
-    }
-
-    #[Override]
-    public function getData(): array
-    {
-        $this->validate('money', 'instrument', 'gateway', 'decrypter');
-
-        /** @var PaymentInstrument $instrument */
-        $instrument = $this->getParameter('instrument');
-
-        return $instrument->accept($this);
+        return $this->command->instrument->accept($this);
     }
 
     #[Override]
@@ -155,14 +86,14 @@ final class PurchaseRequest extends AbstractRequest implements PaymentInstrument
         throw UnsupportedInstrument::onlyAccepts('paynet', 'purchase', HostedPayment::type(), $paymentMethod);
     }
 
+    /**
+     * @return array<string, mixed>
+     */
     #[Override]
     public function visitHostedPayment(HostedPayment $hosted): array
     {
-        /** @var Money $money */
-        $money = $this->getParameter('money');
-        $gateway = $this->getGateway()
-            ?? throw new RuntimeException('A Paynet hosted payment was built without a gateway, so its credentials cannot be read.');
-        $credentials = $this->decryptCredentials($gateway);
+        $money = $this->command->amount;
+        $credentials = $this->decryptCredentials($this->infrastructure->credential);
 
         $externalId = $this->resolveExternalId();
         $now = new DateTimeImmutable;
@@ -182,12 +113,12 @@ final class PurchaseRequest extends AbstractRequest implements PaymentInstrument
 
     private function resolveExternalId(): int|string
     {
-        $explicit = $this->getClientUniqueId();
+        $explicit = $this->command->clientUniqueId;
         if ($explicit !== null && $explicit !== '') {
             return $explicit;
         }
 
-        $generator = $this->getInvoiceIdGenerator();
+        $generator = $this->invoiceIdGenerator;
         if ($generator === null) {
             throw new RuntimeException('Paynet PurchaseRequest requires either a clientUniqueId or an InvoiceIdGenerator.');
         }
@@ -211,16 +142,17 @@ final class PurchaseRequest extends AbstractRequest implements PaymentInstrument
 
     private function isProduction(): bool
     {
-        return ($this->getParameter('environment') ?? 'sandbox') === 'production';
+        return $this->environment === 'production';
     }
 
-    #[Override]
-    public function sendData($data): PurchaseResponse
+    public function charge(): AuthorizationResult
     {
+        $data = $this->payload();
+
         try {
             $accessToken = $this->authenticate($data['url'], $data['credentials']);
 
-            $http = $this->getGuzzle();
+            $http = $this->http;
             $response = $http->post($data['url'].'/api/Payments/Send', [
                 'headers' => [
                     'Authorization' => 'Bearer '.$accessToken,
@@ -235,22 +167,14 @@ final class PurchaseRequest extends AbstractRequest implements PaymentInstrument
             $payload = json_decode((string) $response->getBody(), true) ?? [];
 
             if ($status !== 200 && $status !== 202) {
-                return new PurchaseResponse($this, [
-                    'reference' => null,
-                    'challenge' => null,
-                    'error' => $payload['Message'] ?? 'Paynet Send failed with status '.$status,
-                ]);
+                return AuthorizationResult::failed($payload['Message'] ?? 'Paynet Send failed with status '.$status);
             }
 
             $paymentId = (string) ($payload['PaymentId'] ?? '');
             $signature = (string) ($payload['Signature'] ?? '');
 
             if ($paymentId === '' || $signature === '') {
-                return new PurchaseResponse($this, [
-                    'reference' => null,
-                    'challenge' => null,
-                    'error' => 'Paynet Send response missing PaymentId or Signature',
-                ]);
+                return AuthorizationResult::failed('Paynet Send response missing PaymentId or Signature');
             }
 
             /** @var HostedPayment $hosted */
@@ -268,17 +192,15 @@ final class PurchaseRequest extends AbstractRequest implements PaymentInstrument
                 ],
             );
 
-            return new PurchaseResponse($this, [
-                'reference' => $paymentId,
-                'challenge' => $challenge,
-                'error' => null,
-            ]);
+            // `opening_transaction_reference` is added by every operation that OPENS a payment
+            // intent, and by no other, because `reference` is overwritten on transition: once a
+            // capture lands the row holds the settle reference and can no longer answer which
+            // transaction opened the intent. `RebillingCreateAdapter` reads it back to anchor a
+            // series.
+            return AuthorizationResult::requiresAction($paymentId, $challenge)
+                ->withMetadata(['opening_transaction_reference' => $paymentId]);
         } catch (GuzzleException|RuntimeException $e) {
-            return new PurchaseResponse($this, [
-                'reference' => null,
-                'challenge' => null,
-                'error' => $e->getMessage(),
-            ]);
+            return AuthorizationResult::failed($e->getMessage());
         }
     }
 
@@ -287,7 +209,7 @@ final class PurchaseRequest extends AbstractRequest implements PaymentInstrument
      */
     private function buildPayload(Money $money, array $credentials, int|string $externalId, DateTimeImmutable $now, DateTimeImmutable $expiry): array
     {
-        $billingAddress = $this->getBillingAddress();
+        $billingAddress = $this->command->billingAddress;
 
         return [
             'Invoice' => $externalId,
@@ -338,7 +260,7 @@ final class PurchaseRequest extends AbstractRequest implements PaymentInstrument
      */
     private function authenticate(string $url, array $credentials): string
     {
-        $http = $this->getGuzzle();
+        $http = $this->http;
 
         $response = $http->post($url.'/auth', [
             'form_params' => [
@@ -365,6 +287,6 @@ final class PurchaseRequest extends AbstractRequest implements PaymentInstrument
      */
     private function decryptCredentials(GatewayCredential $gateway): array
     {
-        return array_map($this->getDecrypter()->decrypt(...), $gateway->getCredentials());
+        return array_map($this->infrastructure->decrypter->decrypt(...), $gateway->getCredentials());
     }
 }
