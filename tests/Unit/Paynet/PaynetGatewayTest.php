@@ -14,7 +14,9 @@ use Techork\PaymentService\Gateway\ValueObject\GatewayId;
 use Techork\PaymentService\Gateway\Command\CancelCommand;
 use Techork\PaymentService\Gateway\Command\RefundCommand;
 use Techork\PaymentService\Common\Contract\DecryptInterface;
+use Techork\PaymentService\Common\Contract\CustomerIdentifier;
 use Techork\PaymentService\Common\Contract\PaymentInstrument;
+use Techork\PaymentService\Common\ValueObject\CustomerIdentity;
 use Techork\PaymentService\Common\ValueObject\PaymentInitiation;
 use Techork\PaymentService\Gateway\Command\PlacementCommand;
 use Techork\PaymentService\Gateway\Contract\GatewayCredential;
@@ -23,9 +25,10 @@ use Techork\PaymentService\Gateway\ValueObject\GatewayInfrastructure;
 use Techork\PaymentService\Gateway\Command\IssueCardCommand;
 use Techork\PaymentService\Gateway\Command\TerminateCardCommand;
 use Techork\PaymentService\Gateway\Command\UpdateCardCommand;
+use Techork\PaymentService\Gateway\Command\RegisterCustomerCommand;
 use Techork\PaymentService\Gateway\Command\VaultCommand;
 use Techork\PaymentService\Gateway\ValueObject\CardSpendCategory;
-use Techork\PaymentService\Gateway\Contract\CustomerRepository;
+use Techork\PaymentService\Gateway\Contract\GatewayCustomerRepository;
 
 /**
  * Capture takes a typed command now, so the datasets below cannot call it bare. The helper keeps
@@ -54,6 +57,11 @@ function paynetInvoke(Techork\PaymentService\Paynet\PaynetGateway $gateway, stri
         'tokenize', 'registerPaymentMethod' => $gateway->{$operation}(new VaultCommand(
             gatewayId: GatewayId::generate(),
             instrument: Mockery::mock(PaymentInstrument::class),
+        )),
+        'registerCustomer' => $gateway->registerCustomer(new RegisterCustomerCommand(
+            gatewayId: GatewayId::generate(),
+            customerId: paynetTestCustomerId(),
+            identity: new CustomerIdentity('Ada', 'Lovelace'),
         )),
         'issueVirtualCard' => $gateway->issueVirtualCard(new IssueCardCommand(
             gatewayId: GatewayId::generate(),
@@ -193,4 +201,46 @@ it('leaves refund unmarked so a refund Paynet cannot make still reaches a termin
 
     expect($thrown)->toBeInstanceOf(UnsupportedPaynetOperation::class)
         ->and($thrown)->not->toBeInstanceOf(UnsupportedByGateway::class);
+});
+
+/**
+ * A customer id the adapter can hold without being able to make one: Paynet depends on `Common` and
+ * `Gateway`, never on the domain, which is the property
+ * {@see \Techork\PaymentService\Common\Contract\CustomerIdentifier} exists to give.
+ */
+function paynetTestCustomerId(): CustomerIdentifier
+{
+    static $id = null;
+
+    return $id ??= new readonly class implements CustomerIdentifier
+    {
+        public function toString(): string
+        {
+            return '01920000-0000-7000-8000-00000000cafe';
+        }
+
+        public function __toString(): string
+        {
+            return $this->toString();
+        }
+    };
+}
+
+/**
+ * Paynet has no customer object: the buyer is identified per hosted payment and nothing outlives
+ * one, so there is no id to mint, look up or send. Marked, like the rest, so the stack rethrows
+ * instead of recording a decline for a call nobody made.
+ */
+it('refuses to register a customer, having no customer object at all', function () {
+    $thrown = null;
+
+    try {
+        paynetInvoke(new PaynetGateway, 'registerCustomer');
+    } catch (Throwable $e) {
+        $thrown = $e;
+    }
+
+    expect($thrown)->toBeInstanceOf(UnsupportedOperation::class)
+        ->and($thrown)->toBeInstanceOf(UnsupportedByGateway::class)
+        ->and($thrown->getMessage())->toContain('Paynet has no customer object');
 });

@@ -17,6 +17,7 @@ use Techork\PaymentService\Gateway\Command\RefundCommand;
 use Techork\PaymentService\Gateway\Command\PlacementCommand;
 use Techork\PaymentService\Gateway\Command\RebillingCommand;
 use Techork\PaymentService\Gateway\Contract\AuthorizationResult;
+use Techork\PaymentService\Gateway\Command\RegisterCustomerCommand;
 use Techork\PaymentService\Gateway\Command\VaultCommand;
 use Techork\PaymentService\Gateway\Contract\RegistrationResult;
 use Techork\PaymentService\Gateway\Command\IssueCardCommand;
@@ -159,6 +160,21 @@ final class PaynetGateway implements Gateway
             'paynet',
             'registerPaymentMethod',
             'Paynet is a hosted-page gateway; the card is entered on its page and never reaches us, so there is nothing to tokenize.',
+        );
+    }
+
+    /**
+     * Marked, and for the simplest reason of the three that refuse this: Paynet has no customer
+     * object at all. Nothing on its hosted page names a returning buyer, so there is no id to
+     * mint, look up or send.
+     */
+    #[Override]
+    public function registerCustomer(RegisterCustomerCommand $command): RegistrationResult
+    {
+        throw UnsupportedOperation::forGateway(
+            'paynet',
+            'registerCustomer',
+            'Paynet has no customer object; the buyer is identified per hosted payment and nothing outlives one.',
         );
     }
 

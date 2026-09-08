@@ -29,7 +29,7 @@ use Techork\PaymentService\Common\ValueObject\PaymentInitiation;
 use Techork\PaymentService\Gateway\Command\PlacementCommand;
 use Techork\PaymentService\Gateway\Contract\GatewayInstrumentRepository;
 use Techork\PaymentService\Gateway\ValueObject\GatewayInfrastructure;
-use Techork\PaymentService\Gateway\Contract\CustomerRepository;
+use Techork\PaymentService\Gateway\Contract\GatewayCustomerRepository;
 
 function makePaynetCredential(): GatewayCredential
 {
@@ -122,7 +122,7 @@ function paynetPurchase(array $options, ?Client $http = null, ?InvoiceIdGenerato
             $options['gateway'] ?? Mockery::mock(GatewayCredential::class, ['getId' => GatewayId::generate()]),
             $options['decrypter'] ?? Mockery::mock(DecryptInterface::class),
             $options['referenceResolver'] ?? Mockery::mock(GatewayInstrumentRepository::class, ['find' => null]),
-            $options['customerRepository'] ?? Mockery::mock(CustomerRepository::class, ['findByInstrument' => null]),
+            $options['customerRepository'] ?? Mockery::mock(GatewayCustomerRepository::class, ['find' => null]),
         ),
         $command,
         $http ?? new Client,
