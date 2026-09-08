@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Techork\PaymentService\Paynet;
 
 use Override;
-use Techork\PaymentService\Gateway\Contract\CustomerRepository;
 use Techork\PaymentService\Gateway\Contract\Gateway;
 use Techork\PaymentService\Gateway\Exception\UnsupportedOperation;
 use Techork\PaymentService\Gateway\Command\CaptureCommand;
