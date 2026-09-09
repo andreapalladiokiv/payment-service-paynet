@@ -23,7 +23,6 @@ use Techork\PaymentService\Common\ValueObject\Cash;
 use Techork\PaymentService\Common\ValueObject\Challenge\RedirectChallenge;
 use Techork\PaymentService\Common\ValueObject\CreditCard;
 use Techork\PaymentService\Common\ValueObject\HostedPayment;
-use Techork\PaymentService\Common\ValueObject\AttachedPaymentMethod;
 use Techork\PaymentService\Common\ValueObject\PaymentMethod;
 use Techork\PaymentService\Common\ValueObject\Token;
 use Techork\PaymentService\Gateway\Contract\GatewayCredential;
@@ -83,18 +82,6 @@ final class Purchase implements PaymentInstrumentVisitor
     public function visitPaymentMethod(PaymentMethod $paymentMethod): never
     {
         throw UnsupportedInstrument::onlyAccepts('paynet', 'purchase', HostedPayment::type(), $paymentMethod);
-    }
-
-    /**
-     * An attached one is refused for the same reason as a bare one, which here has nothing to do
-     * with the customer: Paynet takes a payment on its own hosted page and has no product for a
-     * stored instrument at all. Attaching a customer to a card Paynet cannot charge changes
-     * nothing.
-     */
-    #[Override]
-    public function visitAttachedPaymentMethod(AttachedPaymentMethod $attached): never
-    {
-        throw UnsupportedInstrument::onlyAccepts('paynet', 'purchase', HostedPayment::type(), $attached);
     }
 
     /**
