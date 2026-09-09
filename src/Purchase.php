@@ -17,14 +17,13 @@ use Techork\PaymentService\Gateway\ValueObject\GatewayInfrastructure;
 use Override;
 use RuntimeException;
 use Symfony\Component\Intl\Countries;
-use Techork\PaymentService\Common\Contract\DecryptInterface;
-use Techork\PaymentService\Common\Contract\PaymentInstrument;
 use Techork\PaymentService\Common\Contract\PaymentInstrumentVisitor;
-use Techork\PaymentService\Common\ValueObject\BillingAddress;
+use Techork\PaymentService\Common\ValueObject\Customer;
 use Techork\PaymentService\Common\ValueObject\Cash;
 use Techork\PaymentService\Common\ValueObject\Challenge\RedirectChallenge;
 use Techork\PaymentService\Common\ValueObject\CreditCard;
 use Techork\PaymentService\Common\ValueObject\HostedPayment;
+use Techork\PaymentService\Common\ValueObject\AttachedPaymentMethod;
 use Techork\PaymentService\Common\ValueObject\PaymentMethod;
 use Techork\PaymentService\Common\ValueObject\Token;
 use Techork\PaymentService\Gateway\Contract\GatewayCredential;
@@ -84,6 +83,18 @@ final class Purchase implements PaymentInstrumentVisitor
     public function visitPaymentMethod(PaymentMethod $paymentMethod): never
     {
         throw UnsupportedInstrument::onlyAccepts('paynet', 'purchase', HostedPayment::type(), $paymentMethod);
+    }
+
+    /**
+     * An attached one is refused for the same reason as a bare one, which here has nothing to do
+     * with the customer: Paynet takes a payment on its own hosted page and has no product for a
+     * stored instrument at all. Attaching a customer to a card Paynet cannot charge changes
+     * nothing.
+     */
+    #[Override]
+    public function visitAttachedPaymentMethod(AttachedPaymentMethod $attached): never
+    {
+        throw UnsupportedInstrument::onlyAccepts('paynet', 'purchase', HostedPayment::type(), $attached);
     }
 
     /**
@@ -209,15 +220,13 @@ final class Purchase implements PaymentInstrumentVisitor
      */
     private function buildPayload(Money $money, array $credentials, int|string $externalId, DateTimeImmutable $now, DateTimeImmutable $expiry): array
     {
-        $billingAddress = $this->command->billingAddress;
-
         return [
             'Invoice' => $externalId,
             'MerchantCode' => $credentials['merchant_code'],
             'Currency' => (new ISOCurrencies)->numericCodeFor($money->getCurrency()),
             'ExternalDate' => $now->format(DateTimeInterface::W3C),
             'ExpiryDate' => $expiry->format(DateTimeInterface::W3C),
-            'Customer' => $this->buildCustomer($billingAddress, $externalId),
+            'Customer' => $this->buildCustomer($this->command->customer, $externalId),
             'Services' => [[
                 'Name' => $credentials['service_name'] ?? 'Payment',
                 'Description' => $credentials['service_description'] ?? 'Payment',
@@ -226,9 +235,19 @@ final class Purchase implements PaymentInstrumentVisitor
         ];
     }
 
-    private function buildCustomer(?BillingAddress $billingAddress, int|string $externalId): array
+    /**
+     * Paynet's `Customer` block, which is the payer and their address in one object like every
+     * other provider's.
+     *
+     * `Code` still prefers the email over the invoice id, which is the one place left here that
+     * reads an attribute as an identity — and it is deliberate rather than missed. It is Paynet's
+     * customer key and existing records are filed under it, so replacing it with our own customer
+     * id is a migration of their side, not a rename here. Nuvei's `userTokenId` was the same shape
+     * of mistake and cost stored cards to undo, which is why this one is written down.
+     */
+    private function buildCustomer(?Customer $customer, int|string $externalId): array
     {
-        if ($billingAddress === null) {
+        if ($customer === null) {
             return [
                 'Code' => (string) $externalId,
                 'Name' => 'Customer',
@@ -237,18 +256,20 @@ final class Purchase implements PaymentInstrumentVisitor
             ];
         }
 
-        $email = $billingAddress->email !== null ? (string) $billingAddress->email : null;
+        $identity = $customer->identity;
+        $address = $customer->billingAddress;
+        $email = $identity->email !== null ? (string) $identity->email : null;
 
         return array_filter([
             'Code' => $email ?? (string) $externalId,
-            'Address' => $billingAddress->line,
-            'Name' => $billingAddress->firstName.' '.$billingAddress->lastName,
-            'NameFirst' => $billingAddress->firstName,
-            'NameLast' => $billingAddress->lastName,
+            'Address' => $address->line,
+            'Name' => $identity->firstName.' '.$identity->lastName,
+            'NameFirst' => $identity->firstName,
+            'NameLast' => $identity->lastName,
             'email' => $email,
-            'Country' => Countries::getName((string) $billingAddress->country),
-            'City' => $billingAddress->city,
-            'PhoneNumber' => $billingAddress->phone,
+            'Country' => Countries::getName((string) $address->country),
+            'City' => $address->city,
+            'PhoneNumber' => $identity->phone,
         ], fn ($v) => $v !== null && $v !== '');
     }
 

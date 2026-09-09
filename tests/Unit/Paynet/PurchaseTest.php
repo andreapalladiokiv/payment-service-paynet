@@ -108,11 +108,14 @@ function paynetPurchase(array $options, ?Client $http = null, ?InvoiceIdGenerato
         instrument: $options['instrument'] ?? Mockery::mock(PaymentInstrument::class),
         amount: $options['money'] ?? new Money(1000, new Currency('USD')),
         clientUniqueId: $options['clientUniqueId'] ?? null,
-        billingAddress: $options['billingAddress'] ?? null,
         threeDS: $options['threeDS'] ?? null,
         statementDescription: $options['statementDescription'] ?? null,
         description: $options['description'] ?? null,
         initiation: $options['initiation'] ?? PaymentInitiation::CardholderInitiated,
+        // The address and the payer are one field now, so a test that names either names both.
+        customer: array_key_exists('customer', $options)
+            ? $options['customer']
+            : (isset($options['billingAddress']) ? paynetSuiteCustomer(address: $options['billingAddress']) : null),
     );
 
     // Built directly, transport and all: the gateway charges rather than handing back an
