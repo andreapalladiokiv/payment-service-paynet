@@ -44,10 +44,22 @@ final class Purchase implements PaymentInstrumentVisitor
 {
     private const string EXPIRY_INTERVAL = 'PT4H';
 
+    /**
+     * Guzzle defaults to no limit at all: a hung hosted-page call would hold the
+     * payment open indefinitely. The injection point above is for a transport of
+     * the caller's choosing; the default has to be a safe one.
+     */
+    private const float HTTP_TIMEOUT = 10.0;
+
+    private const float HTTP_CONNECT_TIMEOUT = 5.0;
+
     public function __construct(
         private readonly GatewayInfrastructure $infrastructure,
         private readonly PlacementCommand $command,
-        private readonly Client $http = new Client,
+        private readonly Client $http = new Client([
+            'timeout' => self::HTTP_TIMEOUT,
+            'connect_timeout' => self::HTTP_CONNECT_TIMEOUT,
+        ]),
         private readonly ?InvoiceIdGenerator $invoiceIdGenerator = null,
         private readonly string $environment = 'sandbox',
     ) {}
